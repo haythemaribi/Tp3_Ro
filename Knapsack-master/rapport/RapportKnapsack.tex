@@ -1,0 +1,496 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage[french,onelanguage]{algorithm2e}
+\usepackage[tikz]{bclogo}
+\usepackage{geometry}
+\usepackage{array}
+\usepackage{version}
+\usepackage{graphics}
+\usepackage{graphicx}
+\usepackage{floatrow}
+\usepackage{url}
+\usepackage{enumitem}
+\bibliographystyle{alpha}
+\usepackage[counterclockwise]{rotating}
+\geometry{hmargin=2.5cm,vmargin=1.5cm}
+
+\setlength{\parskip}{1ex plus 2ex minus 1ex}
+\newcolumntype{M}[1]{
+    >{\raggedright}m{#1}
+}
+\setlist[description]{topsep=20pt}
+
+% Table float box with bottom caption, box width adjusted to content
+\newfloatcommand{capbtabbox}{table}[][\FBwidth]
+\DeclareFloatFont{small}{\tiny}% "scriptsize" is defined by floatrow, "tiny" not
+\floatsetup[floatrow]{font=small}
+
+\title{
+ \begin{minipage}\linewidth
+        \centering
+        Résolution du problème de Sac à dos 0-1
+        \vskip3pt
+        \large Rapport de projet
+    \end{minipage}
+ }
+ 
+\bibliographystyle{alpha}
+\author{Kévin Barreau}
+
+\begin{document}
+
+\maketitle
+
+\abstract
+L'objectif du projet est d'implémenter différentes méthodes de résolution du problème de sac à dos binaire, afin des les comparer. Il s'agit des méthodes du Branch And Bound, de Programmation Dynamique (sous plusieurs implémentations), de Modèle de Flot dans un graphe, ainsi que l'utilisation du solveur Cplex. Le langage de programmation pour atteindre ce but est libre, mais sa rapidité est essentielle pour la résolution. Le projet a par conséquent été réalisé en Java, au détriment de C++. Les résultats sont présentés en prenant en compte les comportements des algorithmes suivant les types d'instance (nombre d'objets, capacité maximale du sac, corrélation des objets). L'ensemble du projet peut se retrouver à l'adresse suivante : \url{https://github.com/LuminusDev/Knapsack/}.
+
+\newpage
+
+\renewcommand{\contentsname}{Sommaire} 
+\tableofcontents
+
+\newpage
+
+\section{Présentation du projet}
+
+\subsection{Description du problème}
+
+\paragraph{}Explication du problème de sac à dos, puis sac à dos binaire.
+
+\paragraph{}Le problème du sac à dos consiste ranger des objets, possédant chacun un poids et un profit, dans un sac à dos dont la capacité totale est limitée. On cherche alors à maximiser le profit total des objets que l'on met dans le sac à dos, sans que le poids total ne dépasse sa capacité.
+\paragraph{}Le sac à dos \textbf{binaire} est une variante, qui ne permet de prendre un objet que 0 ou 1 fois.
+
+\paragraph{}On peut modéliser ce problème par un programme linéaire en nombre entier :
+
+\[\textrm{max} \sum_{i=1}^{n} p_i x_i\]
+\[\sum_{i=1}^{n} w_i x_i \leq W\]
+\[x_i \in \lbrace0,1\rbrace\ \forall{i}\]
+
+\paragraph{}Ce problème est \textbf{NP-Difficile} au sens faible du terme, car il existe un algorithme le résolvant en un temps pseudo-polynomial (qui dépend de la valeur des données, en l'occurrence la capacité du sac). 
+
+\subsection{Méthodes de résolution}
+
+\paragraph{}Pour résoudre ce problème, plusieurs algorithmes ont été implémenté.
+\begin{itemize}
+	\item Branch And Bound
+	\item Plus court chemin dans un graphe
+	\item Programme Dynamique (Simple Backward)
+	\item Programme Dynamique (Forward avec liste)
+	\item Programme Dynamique (Core avec liste)
+\end{itemize}
+Un modèle du problème est aussi réalisé afin de résoudre les instances dans le solveur CPlex. Cela permet de vérifier les valeurs des solutions des algorithmes implémentés.
+
+\paragraph{}Le \textbf{Branch And Bound} utilise des bornes supérieures et inférieures pour couper des branches de l'arbre d'énumération des solutions, sur lequel on réalise un parcours en profondeur. Une borne supérieure est donné par la valeur de la solution partielle actuelle dans l'arbre, à laquelle on ajoute la valeur de la relaxation linéaire du problème partielle restant. Une borne inférieure correspond à la valeur de la meilleure solution complète trouvée à l'instant.
+
+\paragraph{}Le \textbf{programme dynamique en backward} réalise un parcours des solutions aux problèmes partiels du sac à dos binaire, ne gardant que les meilleurs solutions. Grâce à la décomposabilité du problème initial et à une formule de récurrence, on obtient la solution à notre problème à partir des solutions partielles.
+
+\paragraph{}Le \textbf{programme dynamique en forward} suit le même principe que la méthode en backward, mais utilise des listes pour ne garder les résultats que de états dominants. Cela permet de réduire de manière drastique l'empreinte mémoire du programme.
+
+\paragraph{}Le \textbf{programme dynamique basé sur le core} est une méthode utilisant le principe de \textit{core} dans un problème de sac à dos, dont l'on augmente la taille pour qu'il couvre l'ensemble du sac à dos, et ainsi obtenir la solution.
+
+\paragraph{}La méthode du \textbf{plus court chemin dans un graphe} est initialement un problème de flot maximum transformé, afin d'utiliser l'algorithme de Dijkstra. Le graphe est créé selon le même principe que la programmation dynamique.
+
+\section{Implémentation des algorithmes de résolution du problème de sac à dos binaire}
+
+\subsection{Branch And Bound spécialisé}
+
+\paragraph{}L'algorithme du branch-and-bound implémenté est celui de \textit{Horowitz et Sahni (1974)}, consistant en un parcours en profondeur amélioré sur l'arbre de recherche.
+
+\paragraph{}Pour réaliser ce branch-and-bound sur le problème de sac à dos binaire, le choix du branchement (c'est à dire la variable que l'on fixe) se fait sur la mise de l'objet dans le sac, donc 1 si on le prend, 0 sinon. La profondeur de l'arbre de recherche correspond ainsi au nombre d'objets à traiter.
+
+\paragraph{}On trie premièrement les objets par ordre décroissant suivant leur ratio profit sur poids. On réalise ensuite des itérations de fixation à 1 pour les objets tant que l'on peut les mettre dans le sac, sinon à 0 en recalculant la borne supérieure, correspondant à la valeur de la solution partielle actuelle à laquelle on ajoute la valeur de la solution du problème linéaire relâché par rapport à la capacité et aux objets restants.
+
+\paragraph{}Lorsque l'on arrive sur une feuille de l'arbre de recherche, garde la solution si c'est la meilleure que l'on a trouvé, puis on remonte dans l'arbre jusqu'à une variable fixée à 1 que l'on passe alors à 0, et à partir de laquelle on redémarre une descente.
+
+\paragraph{}L'avantage de cet algorithme est qu'il permet d'obtenir une borne inférieure en $\mathcal{O}(n)$, $n$ étant le nombre d'objet. De plus, cette borne correspondant à la solution d'un algorithme glouton consistant à prendre dans l'ordre les objets ayant le meilleur ratio profit sur poids s'il rentre dans le sac. Cette borne, suivant les instances de problème, permet de couper rapidement des branches de l'arbre de recherche, en adéquation avec la borne supérieure.
+
+\subsection{Plus court chemin dans un graphe}
+
+\paragraph{}Il est possible de reformuler le problème du sac à dos binaire comme un problème de plus court chemin dans un graphe. Le graphe est créé suivant les principes de couches, de transitions et d'états. On notera $maxProfit$ la valeur du plus grand profit dans l'ensemble d'objet de l'instance du problème.
+
+\paragraph{}Pour notre problème, un \textbf{état} est un noeud du graphe, et il représente le profit maximal pour un ensemble d'objets (tous les objets de la couche actuelle et des couches précédentes) et la capacité utilisée.
+
+\paragraph{}Les \textbf{couches} représentent chacune la prise de décision sur un objet $i$. Une couche compte au maximum $W+1$ noeuds (au pire des cas, car on ne crée pas les noeuds qui ne correspondent pas à une solution partielle). Il y a au plus $n$ couches dans le graphe, correspondant au nombre d'objet dans le problème.
+
+\paragraph{}Une \textbf{transition} correspond à un arc dans le graphe, et relie les couches adjacentes. Chaque noeud possède au maximum 2 transitions sortantes. La première transition, vers l'état de la couche suivante avec la même capacité et un poids de $maxProfit$ sur l'arc, représente le fait de ne pas prendre l'objet de la couche actuelle. la deuxième transition, vers l'état de la couche suivante avec la même capacité + $poids_i$  et un poids de $maxProfit - profit_i$ sur l'arc, représente au contraire le fait de prendre l'objet.
+
+\paragraph{}L'utilisation de $maxProfit$ dans les poids des arcs permet de n'utiliser que des valeurs positives ou nulles, permettant de ce fait d'utiliser l'algorithme de Dijkstra sur ce graphe. En ajoutant un dernier noeud faisant office de puit, dont les noeuds de la dernière couche possèdent une transition vers lui (de poids $maxProfit$), on peut réaliser un plus court chemin entre le noeud de l'état de couche 1 avec une capacité de 0, et le puit. Le plus court chemin obtenu permet alors de trouver la solution au problème.
+
+\paragraph{}Attention cependant, car pour obtenir la valeur de la solution, il faut prendre en compte le fait d'avoir ajouter $maxProfit$ au poids des arcs, et donc les retirer pour avoir la véritable valeur.
+
+\subsection{Programme dynamique (simple backward)}
+
+\paragraph{}L'implémentation naïve du problème de sac à dos binaire avec un programme dynamique consiste à reprendre les états et les couches de la méthode de résolution dans un graphe. On obtient ainsi une matrice en $\mathcal{O}(nW)$ en mémoire.
+
+\paragraph{}Une cellule de cette matrice correspond à $V^k (b)$ qui est le profit maximum qu'on peut obtenir avec les objets $1$ à $k$ et une capacité de $b$, telle que:
+
+\[
+V^k (b) = \mathrm{max}
+\lbrace
+\sum_{i=1}^{k}p_i x_i :
+\sum_{i=1}^{k}w_i x_i \leq b,
+x_i \in \lbrace0,1\rbrace i = 1,\ldots,k
+\rbrace
+\]
+
+\paragraph{}Il suffit ensuite d'avoir une formule de récurrence permettant de calculer les $V^k (b)$ de proche en proche, avec
+
+\[
+V^k (b) = \mathrm{max}
+\lbrace
+\underbrace{V^{k-1}(b)}_{x_k=0},
+\underbrace{V^{k-1}(b-w_k)+p_k}_{x_k=1}
+\rbrace
+, \textnormal{ pour } k = 1,\ldots,n \textnormal{ et } b = 1,\ldots,W
+\]
+
+et initialisée telle que $V^0(b)=0$ pour $b=0,\ldots,W$.
+
+\paragraph{}La valeur de la solution est donnée par $\mathrm{max}_{b\leq W}V^n(b)$.
+
+\paragraph{}L'algorithme pour résoudre ce programme dynamique est le suivant :
+
+\begin{algorithm}[H]
+	\For{$b=0$ à $W$}{
+		$V^0(b)=0$\;
+	}
+	\For{$k=0$ à $n-1$}{
+		\For{$b=W$ à $w_k$}{
+			\eIf{$V^k(b-w_k)+p_k > V^k(b)$}{
+				$V^{k+1}(b) = \mathrm{max}\lbrace V^k(b), V^k(b-w_k)+p_k\rbrace$\;
+       		}{
+       			$V^{k+1}(b) = V^k(b)$\;
+       		}	    		
+		}
+		\For{$b=0$ à $\mathrm{min}\lbrace w_k-1, W\rbrace$}{
+			$V^{k+1}(b) = V^k(b)$\;
+		}
+	}
+	\Return{$V[W]$}
+\end{algorithm}
+
+\paragraph{}On peut, à partir de là, retrouver la solution en parcourant les objets dans le sens inverse de l'algorithme, avec :
+
+\[
+X^k(b) = \left\{
+	\begin{array}{ll}
+		1 \textnormal{ si } V^{k-1}(b-w_k)+p_k > V^{k-1}(b) \\
+		0 \textnormal{ sinon} 
+	\end{array}
+	\right.
+\]
+
+\paragraph{}On obtient ainsi une algorithme qui résout le problème de sac à dos binaire avec une complexité pseudo-polynomiale (qui dépend de la taille de $W$) de $\mathcal{O}(nW)$ en temps de calcul et un espace mémoire de $\mathcal{O}(nW)$.
+
+\subsection{Programme dynamique (forward en liste)}
+
+\paragraph{}La méthode du programme dynamique avec une matrice possède un énorme désavantage : son utilisation mémoire. Cela l'empêche d'être utilisé dans un environnement contraint (système embarqué, IoT, ...) ou pour résoudre de très grosses instances. C'est ainsi que l'on se dirige vers un \textbf{programme dynamique en liste}.
+
+\paragraph{}On ne conserve que le poids et le profit dans un état, ce qui correspond à une solution partielle au problème. L'objectif de la liste est de ne garder que les états utiles au cours de la récursion. On peut le faire grâce au principe de dominance des solutions partielles.
+
+\paragraph{}Ainsi, pour un état $(w,p)$ avec $w$ comme poids actuel et $p$ comme profit actuel, on peut appliquer la \textbf{dominance} par rapport à un autre état qui indique que :
+
+\[
+(w^1,p^1)\succ(w^2,p^2), \textnormal{ si }
+(w^1 < w^2 \wedge p^1 \geq p^2) \vee (w^1 = w^2 \wedge p^1 > p^2)
+\]
+
+
+\paragraph{}On peut aussi couper les états par borne, dans le cas où $p+PL(n-k,W-w) \leq LB$, avec $PL(a,b)$ la relaxation linéaire du problème pour les objets de $n-k$ à $k$ et une capacité de $W-w$, et $LB$ une borne inférieure de l'instance calculée préalablement à partir d'un algorithme glouton (combinaison du glouton sur les ratios et du glouton sur les profits).
+
+\paragraph{}L'algorithme de résolution par la méthode de programme dynamique en liste peut alors se résumer à :
+
+\begin{algorithm}[H]
+	Soit $list=\lbrace (0,0)\rbrace $\\
+	\For{$k=1$ à $n$}{
+		Soit $list'$ vide\\
+		\For{$s=(w,p) \in list$}{
+			\If{$w+w_k \leq W$}{
+				Ajouter $(w+w_k,p+p_k)$ à $list'$\\
+       		}
+       		Fusionner $list'$ et $list$ en éliminant les états dominés\\
+		}
+	}
+	\Return{$max\lbrace p : (w,p) \in list \rbrace$}
+\end{algorithm}
+
+\paragraph{}On ne garde alors qu'un nombre limité d'états dans la liste, qui est inférieur au $\mathcal{O}(nW)$ de la matrice. Pour retrouver la solution, on ajoute un pointeur dans chaque état vers son état précédent. Il est a noté que l'utilisation de pointeur peut augmenter la mémoire nécessaire au fonctionnement de l'algorithme si elle est mal gérée. En effet, garder un pointeur dans un état actif veut dire qu'il ne faut pas supprimer les états précédents ce pointeur. On ne peut donc rien supprimer dans un langage comme C++ où la gestion de la mémoire dynamique doit être réalisée à la main. Dans le cas de ce projet, fait en Java, le GC (garbage collecter) s'occupe seul de supprimer les états n'ayant plus aucun pointeur d'actif, ce qui limite l'empreinte mémoire.
+
+\subsection{Programme dynamique (core en liste)}
+
+\paragraph{}La dernière implémentation d'un programme dynamique consiste à utiliser le principe de \textbf{core} dans un problème de sac à dos.
+
+\paragraph{}Trions les objets de manière décroissante par leur ratio profit/poids. Le core est alors l'intervalle $[a,b]$ avec $1 \leq a \leq b \leq n$ tel que :
+
+\[
+Z^*=\sum_{i<a}p_i+\mathrm{max}
+\lbrace
+\sum_{i=a}^b p_i x_i : \sum_{i=a}^b w_i x_i \leq W - \sum_{i<a} w_i,
+x_i \in \lbrace 0,1 \rbrace i \in [a,b]
+\rbrace
+\]
+
+\paragraph{}Nous utilisons cette formule pour définir $V^{a,b}(d) = Z^*$ en remplaçant $W$ par $d$ dans l'équation.Le principe est alors de partir d'un objet, et d'augmenter petit à petit la taille de notre core afin d'obtenir un intervalle $[1,n]$, donnant ainsi la valeur de la solution à notre problème.
+
+\paragraph{}On initialise alors la récurrence avec $V^{c,c-1}(d) = \sum_{i<c}p_i \forall d > \sum_{i<c}w_i$.
+
+\paragraph{}La récursion, $\forall a,b$ et $d=0,\ldots,2W$ est :
+
+\[
+V^{a,b}(d)=\mathrm{max}
+\lbrace
+\underbrace{
+	V^{a+1,b}(d)
+}_{x_a=1},
+\underbrace{
+	V^{a+1,b}(d+w_a)-p_a
+}_{x_a=0},
+\]
+
+\[
+\underbrace{
+	V^{a,b-1}(d)
+}_{x_b=0},
+\underbrace{
+	V^{a,b-1}(d-w_b)+p_b
+}_{x_b=1}
+\rbrace
+\]
+
+\paragraph{}On suit ensuite la séquence $\forall d, V^{c,c-1},V^{c,c},V^{c-1,c},V^{c-1,c+1},\ldots,V^{1,n}$ pour obtenir le résultat en forward.
+
+\paragraph{}On prend dans notre algorithme pour objet $c$ l'objet critique, correspondant à l'objet tel que, dans l'ordre défini précédemment, les $c-1$ objets précédent entrent dans le sac à dos, et l'objet $c$ ne rentre pas à cause de la capacité.
+
+\paragraph{}Les états, notés $(a,b,w,p)$, sont définis par :\\
+$\mathbf{a}$ et $\mathbf{b}$ sont les bornes de l'intervalle;\\
+$\mathbf{w}=\overline{w}+\tilde{w}$ tel que $\overline{w}=\sum_{i<a}w_i$ et $\tilde{w} \leq W$;\\
+$\mathbf{p}=\overline{p}+\tilde{p}$ tel que $\overline{p}=\sum_{i<a}p_i$ et $p+\sum_{i>b}p_i \geq LB$;\\
+
+\paragraph{}La borne inférieure, notée $LB$, correspond à la meilleure valeur de solution partielle, soit :\\
+$\mathbf{LB}=\mathrm{max}\lbrace p : (a,b,w,p) \in list \wedge w \leq W \rbrace$ avec $list$ l'ensemble des états à un moment de l'algorithme;
+
+\paragraph{}L'algorithme de résolution peut ainsi se résumer à :\\
+\begin{algorithm}[H]
+	Soit $list=\lbrace (c,c-1,\sum_{i<a}w_i,\sum_{i<a}p_i)\rbrace $\\
+	\While{$a>1 \vee b<n$}{
+		\If{$b<n$}{
+			Soit $list'$ vide;\\
+			\For{$(a,b,w,p) \in list$}{
+				Ajouter $(a,b+1,w,p)$ à $list'$;\\
+				\If{$\tilde{w}+w_{b+1} \leq W$}{
+					Ajouter $(a,b+1,w+w_{b+1},p+p_{b+1})$ à $list'$;\\
+       			}
+			}
+			Éliminer les états par borne et dominance dans $list'$;\\
+       		$list = list'$;\\
+		}
+		\If{$a>1$}{
+			Soit $list'$ vide;\\			
+			\For{$(a,b,w,p) \in list$}{
+				Ajouter $(a-1,b,w,p)$ à $list'$;\\
+				Ajouter $(a-1,b,w-w_{b+1},p-p_{b+1})$ à $list'$;\\
+			}
+			Éliminer les états par borne et dominance dans $list'$;\\
+       		$list = list'$;\\
+		}
+	}
+	\Return{$LB$}
+\end{algorithm}
+
+\paragraph{}L'élimination par dominance est identique à la méthode de forward par liste :
+
+\[
+(a,b,w^1,p^1)\succ(a,b,w^2,p^2), \textnormal{ si }
+(w^1 < w^2 \wedge p^1 \geq p^2) \vee (w^1 = w^2 \wedge p^1 > p^2)
+\]
+
+\paragraph{}L'élimination par borne intervient si, pour un $(a,b,w,p)$ donné :
+
+\[
+\tilde{p}+\mathrm{max}
+\lbrace
+\sum_{i<a,i>b}p_i x_i : \sum_{i<a,i>b}w_i x_i \leq W - \tilde{w}, x_i \in [0,1]
+\rbrace \leq LB
+\]
+
+\paragraph{}Pour retrouver la solution, on ajoute un pointeur dans chaque état vers son état précédent.
+
+\paragraph{}Il est intéressant de noter que, dans le cas où $c=1$ et $LB$ est la sortie d'un algorithme glouton, on retrouve exactement l'algorithme de programmation dynamique forward en liste vu dans le chapitre précédent.
+
+\section{Résultats et analyses}
+
+\paragraph{}Les instances sont créées à l'aide de deux générateurs :
+\begin{itemize}
+\item un générateur pseudo-aléatoire possédant comme paramètres le poids min et max d'un objet, ainsi que le profit min et max d'un objet,
+\item un générateur linéaire, avec un profit proportionnel au poids. Il permet de créer des instances fortement corrélées (tous avec le même ratio profit/poids par exemple).
+\end{itemize}
+
+\paragraph{}Dans les résultats des jeux de données, tous les temps sont exprimés en millisecondes. De plus :
+\begin{itemize}
+ \item[\textbf{"OoM"}] : "Out Of Memory" correspondant à une trop grande utilisation de la mémoire ($>$~2Go).
+ \item[\textbf{"-"}] : temps d'exécution supérieur à 10 minutes.
+ \end{itemize}
+ 
+ \paragraph{}Les temps on été réalisés sur une machine sous Windows 8.1, avec un processeur Intel Core i5-4460 cadencé à 3,2GHZ et possédant 8Go de RAM DDR3. Les paramètres de la JVM autorise une allocation mémoire maximale du tas de 2,13Go.
+
+\subsection{Données faiblement corrélées}
+
+\paragraph{}Le premier jeu de données est constitué d'instances générées aléatoirement, avec un poids inférieur à 25\% de la capacité, et un profit inférieur à 50\% de la capacité, sur 10 itérations.
+
+\begin{figure}[!h]
+\begin{floatrow}
+\capbtabbox{
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|}
+	\hline
+	 & \multicolumn{3}{c|}{Bab} & \multicolumn{3}{c|}{Backward} & \multicolumn{3}{c|}{Forward} & \multicolumn{3}{c|}{Core} & \multicolumn{3}{c|}{Graphe} \\
+	\cline{2-16}
+	(nbItem, cap) & mean & min & max & mean & min & max & mean & min & max & mean & min & max & mean & min & max \\
+	\hline
+	(200,400) & 0 & 0 & 0 & 1 & 0 & 9 & 5 & 0 & 53 & 0 & 0 & 4 & 15767 & 13476 & 17309 \\
+	\hline
+	(400,800) & 0 & 0 & 1 & 4 & 0 & 27 & 7 & 0 & 58 & 1 & 0 & 7 & 254781 & 194129 & 279740 \\
+	\hline
+	(800,1600) & 0 & 0 & 1 & 9 & 0 & 19 & 6 & 0 & 48 & 2 & 0 & 9 & - & - & - \\
+	\hline
+	(1600,3200) & 0 & 0 & 0 & 14 & 0 & 47 & 15 & 0 & 62 & 0 & 0 & 0 & - & - & - \\
+	\hline
+	(16K,32K) & 0 & 0 & 1 & OoM & OoM & OoM & 50 & 15 & 110 & 19 & 0 & 62 & OoM & OoM & OoM \\
+	\hline
+	(160K,320K) & 18 & 15 & 47 & OoM & OoM & OoM & 266 & 109 & 594 & 128 & 62 & 289 & OoM & OoM & OoM \\
+	\hline
+	(320K,640K) & 36 & 5 & 54 & OoM & OoM & OoM & 503 & 227 & 1414 & 349 & 118 & 612 & OoM & OoM & OoM \\
+	\hline
+	(640K,1280K) & 101 & 26 & 166 & OoM & OoM & OoM & 994 & 613 & 1696 & 1527 & 257 & 2826 & OoM & OoM & OoM \\
+	\hline
+	(1280K,2560K) & 142 & 44 & 321 & OoM & OoM & OoM & 1030 & 630 & 2462 & 2098 & 469 & 5542 & OoM & OoM & OoM \\
+	\hline
+\end{tabular}
+}{\caption{Résultats des données faiblement corrélées}}
+\end{floatrow}
+\end{figure}
+
+\paragraph{}A partir de 160K items, le core ne donne pas forcément la bonne solution (dû à l'utilisation du type "int" qui fausse le résultat de la relaxation linéaire sur de trop grand nombre).
+
+\paragraph{}On remarque que la méthode de \textbf{graphe} est extrêmement longue même avec de petites instances, avec 15 secondes en moyenne pour 200 objets et 400 de capacité, alors que tous les autres algorithmes donnent un résultat quasi instantané jusqu'à 1600 objets et 3200 de capacité. On peut l'expliquer par le fait que cette méthode ne permet pas de couper un ensemble de solution ou d'en éliminer par dominance.
+
+\paragraph{}De plus, les méthodes de \textbf{backward} et de \textbf{graphe} ne peuvent plus donner de résultat à partir de 16K objets à cause d'un dépassement de mémoire. La taille de la matrice de taille $N*W$ en backward et la taille du graphe (du même ordre de grandeur) limite la possibilité d'utilisation de ces algorithmes. Les temps en backward sont cependant bons lorsque la mémoire est suffisante, avec des mesures similaires aux autres programmes dynamiques (forward et core).
+
+\paragraph{}Les données faiblement corrélées permettent d'obtenir d'excellentes bornes et coupes par dominance. Ce qui explique des résultats toujours très bons pour le \textbf{branch-and-bound}, le \textbf{forward} et le \textbf{core}. On peut ainsi traiter des instances de très grandes tailles sans subir de réelle contreperformance (pour plus de 1M d'objets, on ne dépasse pas les 5 secondes dans le pire cas, et même 0.321 seconde pour le branch-and-bound).
+
+
+\subsection{Données très fortement corrélées}
+
+\paragraph{}Le deuxième jeu de données est constitué d'instances générées de manière linéaire, avec un poids égal au profit (ex : (1,1)(2,2)(3,3)...), sur 10 itérations. Les ratios profit/poids sont ainsi identiques.
+
+\begin{figure}[!h]
+\begin{floatrow}
+\capbtabbox{
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|}
+	\hline
+	 & \multicolumn{3}{c|}{Bab} & \multicolumn{3}{c|}{Backward} & \multicolumn{3}{c|}{Forward} & \multicolumn{3}{c|}{Core} & \multicolumn{3}{c|}{Graphe} \\
+	\cline{2-16}
+	(nbItem, cap) & mean & min & max & mean & min & max & mean & min & max & mean & min & max & mean & min & max \\
+	\hline
+	(32,64) & 0 & 0 & 1 & 0 & 0 & 2 & 6 & 0 & 51 & 3944 & 3874 & 4088 & 24 & 10 & 130 \\
+	\hline
+	(33,66) & 0 & 0 & 0 & 0 & 0 & 2 & 13 & 2 & 55 & 6076 & 5898 & 6180 & 40 & 13 & 137 \\
+	\hline
+	(40,80) & 0 & 0 & 0 & 0 & 0 & 2 & 36 & 13 & 55 & 81245 & 83478 & 84600 & 219 & 184 & 256 \\
+	\hline
+	(50,100) & 0 & 0 & 0 & 0 & 0 & 2 & 6 & 1 & 52 & - & - & - & 52 & 25 & 195 \\
+	\hline
+	(10K,20K) & 1 & 0 & 4 & 664 & 454 & 968 & - & - & - & - & - & - & OoM & OoM & OoM \\
+	\hline
+	(100K,200K) & 4 & 2 & 12 & OoM & OoM & OoM & - & - & - & - & - & - & OoM & OoM & OoM \\
+	\hline
+	(10M,20M) & 391 & 189 & 1940 & OoM & OoM & OoM & - & - & - & - & - & - & OoM & OoM & OoM \\
+	\hline
+\end{tabular}
+}{\caption{Résultats}}
+\end{floatrow}
+\end{figure}
+
+\paragraph{}De la même manière que pour les instances non corrélées, les méthodes de graphe et de backward sont limités par leur utilisation excessive de la mémoire, ce qui ne permet pas de dépasser 10K objets et 100K objets respectivement.
+
+\paragraph{}On observe immédiatement un comportement de la méthode du \textbf{core} différent des autres méthodes, avec des temps dépassant les 3 secondes en moyenne, pour seulement 32 objets. En ajoutant seulement 1 objet, on augmente le temps moyen de 50\%, alors que les autres algorithmes ne donnent pas de différence significatives. On pourrait expliquer ce comportement par le fait que la borne inférieure utilisée dans la méthode est légèrement inférieure à la solution optimale. L'algorithme réalise ensuite une recherche exhaustive des solutions, ne parvenant pas à supprimer des solutions que ce soit par borne ou par dominance. La méthode du \textbf{forward} n'arrive plus à suivre à partir d'un certain seuil de la même manière.
+
+\paragraph{}Le \textbf{branch-and-bound} permet de trouver des solutions très rapidement, car la première descente donne une borne qui est la solution optimale. L'algorithme résout ainsi ces instances en $\mathcal{O}(n^2)$, d'où des temps inférieur à la seconde pour des instances énormes (10M d'objets par exemple).
+
+
+\subsection{Données fortement corrélées}
+
+\paragraph{}Le troisième jeu de données est constitué d'instances générées de manière linéaire, avec $poids(i) = minPoids+i$ et $profit(i) = minProfit+i*0.2 $, sur 10 itérations.
+
+\begin{figure}[!h]
+\begin{floatrow}
+\capbtabbox{
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|}
+	\hline
+	 & \multicolumn{3}{c|}{Bab} & \multicolumn{3}{c|}{Backward} & \multicolumn{3}{c|}{Forward} & \multicolumn{3}{c|}{Core} & \multicolumn{3}{c|}{Graphe} \\
+	\cline{2-16}
+	(nbItem, cap) & mean & min & max & mean & min & max & mean & min & max & mean & min & max & mean & min & max \\
+	\hline
+	(100,500) & 0 & 0 & 0 & 1 & 0 & 5 & 6 & 0 & 53 & 34 & 25 & 73 & 5855 & 4468 & 6069 \\
+	\hline
+	(200,1000) & 0 & 0 & 0 & 2 & 0 & 11 & 5 & 0 & 53 & 5 & 2 & 18 & 74278 & 71470 & 76133 \\
+	\hline
+	(1K,5K) & 0 & 0 & 1 & 15 & 6 & 36 & 8 & 2 & 60 & - & - & - & - & - & - \\
+	\hline
+	(10K,50K) & 0 & 0 & 2 & OoM & OoM & OoM & 27 & 7 & 84 & - & - & - & OoM & OoM & OoM \\
+	\hline
+	(100K,500K) & 2 & 2 & 8 & OoM & OoM & OoM & 130 & 65 & 370 & - & - & - & OoM & OoM & OoM \\
+	\hline
+	(220K,1100K) & 35 & 20 & 80 & OoM & OoM & OoM & - & - & - & - & - & - & OoM & OoM & OoM \\
+	\hline
+	(2M,10M) & 281 & 149 & 697 & OoM & OoM & OoM & - & - & - & - & - & - & OoM & OoM & OoM \\
+	\hline
+	(5M,25M) & 390 & 354 & 531 & OoM & OoM & OoM & - & - & - & - & - & - & OoM & OoM & OoM \\
+	\hline
+\end{tabular}
+}{\caption{Résultats}}
+\end{floatrow}
+\end{figure}
+
+\paragraph{}Les résultats de ce jeu de données ressemblent fortement au jeu de données précédent. On remarque tout de même une amélioration des résultats pour les algorithmes de programmation dynamique, avec la méthode du \textbf{core} donnant des résultats sous les 10 minutes pour les instances inférieures à 200 objets, contre seulement 50 pour les données précédentes. La méthode de \textbf{forward} peut gérer des instances de 100K objets aisément sur ces instances, parvenant donc à couper par des bornes ou de la dominance, là où elle n'y parvenait pour le jeu de données précédent.
+
+\subsection{Données fortement corrélées sur le poids uniquement}
+
+\paragraph{}Le quatrième jeu de données est constitué d'instances générées aléatoirement, avec $poids \in [nbItems/10, nbItems/10+nbItems/100]$ et $profit \in [1,nbItems]$, sur 10 itérations.
+
+\begin{figure}[!h]
+\begin{floatrow}
+\capbtabbox{
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|r|}
+	\hline
+	 & \multicolumn{3}{c|}{Bab} & \multicolumn{3}{c|}{Backward} & \multicolumn{3}{c|}{Forward} & \multicolumn{3}{c|}{Core} & \multicolumn{3}{c|}{Graphe} \\
+	\cline{2-16}
+	(nbItem, cap) & mean & min & max & mean & min & max & mean & min & max & mean & min & max & mean & min & max \\
+	\hline
+	(200,1000) & 6 & 0 & 52 & 3 & 0 & 16 & 6 & 0 & 49 & 1 & 0 & 5 & 70896 & 56038 & 73046 \\
+	\hline
+	(400,2000) & 3095 & 0 & 20178 & 4 & 1 & 16 & 23 & 1 & 82 & 8 & 0 & 44 & - & - & - \\
+	\hline
+	(800,4000) & 4280 & 0 & 31651 & 10 & 5 & 35 & 37 & 2 & 123 & 16 & 3 & 71 & - & - & - \\
+	\hline
+	(1600,8000) & - & 0 & - & 41 & 21 & 83 & 1284 & 1 & 2857 & 745 & 1 & 3432 & - & - & - \\
+	\hline
+	(10K,50K) & - & - & - & OoM & OoM & OoM & 19035 & 7712 & 31749 & 170000 & 170000 & 170000 & - & - & - \\
+	\hline
+\end{tabular}
+}{\caption{Résultats}}
+\end{floatrow}
+\end{figure}
+
+\paragraph{}La particularité de ces résultats par rapport aux autres est de posséder une forte dispersion. On retrouve des instances simples et compliquées au sein d'une même distribution de données.
+\paragraph{}On note une difficulté pour la méthode de \textbf{branch-and-bound} à donner des résultats rapidement, ce qui n'était pas dans les précédents jeux de données. L'augmentation du nombre d'objets influe grandement sur les temps de résolution, avec plus de 10 minutes en moyenne pour résoudre des instances de 1600 objets, alors que plus d'un million d'objets pouvaient être gérés dans les autres jeux de données.
+\paragraph{}Les méthodes de programmation dynamique permettent cependant d'obtenir de bons résultats sur ces instances, en réussissant à ne pas dépasser les 10 minutes dans le pire cas pour des instances de 10000 objets. Les temps sont tout de même relativement plus long dans la résolution que ce que l'on peut obtenir au mieux dans les jeux de données précédent.
+
+\section{Conclusion}
+
+\paragraph{}En prenant en compte les résultats obtenus sur les jeux de données précédent, on peut remarquer que deux méthodes se démarquent dans la résolution du problème de sac à dos binaire.
+
+\paragraph{}En étudiant au préalable la corrélation des données, on serait amener à utiliser la méthode de \textbf{branch-and-bound} lorsque les données sont faiblement corrélées ou au contraire très fortement corrélées linéairement. On peut résoudre des instances contenant des millions d'objets de cette manière. 
+A partir du moment où les données deviennent fortement corrélées (de manière non linéaire), cette méthode peut rapidement être dépassée, et dans ce cas on lui préférera la méthode de programmation dynamique, et plus particulièrement la méthode de \textbf{programmation dynamique en liste}.
+
+\end{document}
