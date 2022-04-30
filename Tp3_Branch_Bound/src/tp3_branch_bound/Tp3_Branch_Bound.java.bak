@@ -8,18 +8,18 @@ package tp3_branch_bound;
 
 public class Tp3_Branch_Bound {
 
-  int Calcule_solution_optimale(int[] poids, int[] c, int n, int poids_total) {
-    if (n <= 0 || poids_total <= 0) {
+  int Calcule_solution_optimale(int[] poids, int[] c, int n, int poids_tptal) {
+    if (n <= 0 || poids_tptal <= 0) {
         return 0;
     }
 
-    int[][] m = new int[n + 1][poids_total + 1];
-    for (int j = 0; j <= poids_total; j++) {
+    int[][] m = new int[n + 1][poids_tptal + 1];
+    for (int j = 0; j <= poids_tptal; j++) {
         m[0][j] = 0;
     }
 
     for (int i = 1; i <= n; i++) {
-        for (int j = 1; j <= poids_total; j++) { 
+        for (int j = 1; j <= poids_tptal; j++) { 
             if (poids[i - 1] > j) {
                 m[i][j] = m[i - 1][j];
             } else {
