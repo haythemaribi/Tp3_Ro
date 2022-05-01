@@ -29,7 +29,7 @@ public class Tp3_Branch_Bound {
             }
         }
     }
-    return m[n][poids_tptal];
+    return m[n][poids_total];
 }
     public static void main(String[] args) {
        Tp3_Branch_Bound tp3=new Tp3_Branch_Bound();
